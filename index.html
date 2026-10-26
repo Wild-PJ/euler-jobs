@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b2430">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Euler Jobs">
+<title>Euler Jobs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column of job panels, newest activity first; log tails in a terminal-like well. */
+:root {
+  --bg: #eef1f4;
+  --panel: #ffffff;
+  --ink: #18202a;
+  --muted: #5d6877;
+  --line: #d5dbe2;
+  --well: #18202a;
+  --well-ink: #d6dee8;
+  --accent: #2f5f98;
+  --run: #2f6fb8;
+  --ok: #24804f;
+  --fail: #b8322b;
+  --warn: #a6670c;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161d; --panel: #1a212b; --ink: #e3e8ee; --muted: #93a0b0; --line: #2b3542;
+    --well: #0b0f14; --well-ink: #cfd8e3; --accent: #7fa8de;
+    --run: #6ea6ea; --ok: #5cc28b; --fail: #ef7a72; --warn: #e2a84b;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 var(--font-ui);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+}
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+header .wrap { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
+h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.conn.live .dot { background: var(--ok); }
+.conn.down .dot { background: var(--fail); }
+.spacer { flex: 1; }
+button, select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-block: 14px 4px; }
+.status-line { font-size: 13px; color: var(--muted); min-height: 1.4em; padding-block: 2px 10px; }
+.jobs { display: grid; gap: 12px; }
+.job { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.job-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 12px 14px 8px; }
+.job-name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; min-width: 0; }
+.pill {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor;
+}
+.pill.running { color: var(--run); } .pill.done { color: var(--ok); }
+.pill.failed { color: var(--fail); } .pill.stopped { color: var(--warn); }
+.job-meta { font-size: 13px; color: var(--muted); padding: 0 14px 10px; font-variant-numeric: tabular-nums; }
+.job-meta .headline { color: var(--ink); }
+pre.log {
+  margin: 0; background: var(--well); color: var(--well-ink);
+  font: 12px/1.5 var(--font-mono); padding: 10px 14px; overflow-x: auto; white-space: pre;
+  max-height: 22em;
+}
+.job-foot { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 14px 12px; font-size: 13px; }
+.job-foot a { color: var(--accent); }
+.waiting { color: var(--run); }
+.empty, .setup { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+.empty p, .setup p { margin: 0 0 10px; }
+.setup label { display: block; font-weight: 600; margin-bottom: 6px; }
+.setup input {
+  width: 100%; font: 14px var(--font-mono); padding: 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin-bottom: 10px;
+}
+.hint { font-size: 13px; color: var(--muted); }
+.err { color: var(--fail); font-size: 13px; }
+footer { padding-block: 18px; font-size: 12px; color: var(--muted); }
+footer button { font-size: 12px; padding: 4px 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .waiting::after { content: ""; display: inline-block; width: 1.2em; animation: dots 1.2s steps(4) infinite; overflow: hidden; vertical-align: bottom; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Euler Jobs</h1>
+    <span class="conn" id="conn"><span class="dot"></span><span id="connText">offline</span></span>
+    <span class="spacer"></span>
+    <button id="refreshBtn" class="primary" type="button" hidden>Refresh</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="setup" class="setup" hidden>
+    <p>Enter your notification topic once. It's the <code>phwild-euler-…</code> name the Euler setup printed (also in <code>E:\.ntfy_topic</code>).</p>
+    <form id="setupForm">
+      <label for="topicInput">Topic</label>
+      <input id="topicInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="phwild-euler-xxxxxxxx">
+      <div id="setupErr" class="err" hidden></div>
+      <button class="primary" type="submit">Save and open</button>
+    </form>
+    <p class="hint" style="margin-top:12px">Tip: after saving, add this page to your home screen. The topic stays on this phone only.</p>
+  </section>
+
+  <section id="app" hidden>
+    <div class="toolbar">
+      <label for="lines" class="hint">Lines</label>
+      <select id="lines">
+        <option value="10">10</option>
+        <option value="30">30</option>
+        <option value="50">50</option>
+      </select>
+      <span class="spacer"></span>
+      <span class="hint" id="countText"></span>
+    </div>
+    <div class="status-line" id="statusLine"></div>
+    <div class="jobs" id="jobs"></div>
+  </section>
+
+  <footer id="footer" hidden>
+    Messages from the last 12 hours. Topic <span id="topicText"></span>
+    <button id="changeTopic" type="button">Change</button>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var NTFY = "https://ntfy.sh/";
+  var REPLY_TIMEOUT_MS = 50000;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var topic = null;
+  var jobs = {};          // name -> job state
+  var seen = {};          // message ids already processed
+  var waitingSince = 0;   // time a refresh was requested (ms)
+  var waitTimer = null;
+  var es = null;
+
+  function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function validTopic(t) { return /^[A-Za-z0-9_-]{1,64}$/.test(t || ""); }
+
+  // ---------- message parsing ----------
+  function jobName(msg) {
+    var t = msg.title || "";
+    if (t.indexOf("Euler: ") !== 0) return null;
+    return t.slice(7).replace(/ - full log$/, "");
+  }
+  function classify(text) {
+    if (/^Started/.test(text)) return "running";
+    if (/^Running for/.test(text)) return "running";
+    if (/^Finished OK/.test(text)) return "done";
+    if (/^(FAILED|KILLED)/.test(text)) return "failed";
+    if (/^STOPPED/.test(text)) return "stopped";
+    return null;
+  }
+  function logLines(text) {
+    var i = text.indexOf("\n\n");
+    if (i < 0) return null;
+    var body = text.slice(i + 2).replace(/^Last lines:\n/, "");
+    return body.trim() ? body.replace(/\s+$/, "") : null;
+  }
+  function minutesFrom(text) {
+    var m = text.match(/(\d+) min/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function ingest(msg) {
+    if (!msg || msg.event !== "message" || seen[msg.id]) return false;
+    seen[msg.id] = true;
+    var name = jobName(msg);
+    if (!name) return false;
+    var j = jobs[name] || (jobs[name] = { name: name, status: null, headline: "", lines: null, linesTime: 0, time: 0, logUrl: null, logExpires: 0, minutes: null, minutesTime: 0 });
+    var text = msg.message || "";
+    var time = (msg.time || 0) * 1000;
+    if (msg.attachment && msg.attachment.url) {
+      j.logUrl = msg.attachment.url;
+      j.logExpires = (msg.attachment.expires || 0) * 1000;
+      j.time = Math.max(j.time, time);
+      return true;
+    }
+    var st = classify(text);
+    if (st && time >= j.time) {
+      j.status = st;
+      j.headline = text.split("\n")[0];
+    }
+    var mins = minutesFrom(text.split("\n")[0]);
+    if (mins !== null && time >= j.minutesTime) { j.minutes = mins; j.minutesTime = time; }
+    var lines = logLines(text);
+    if (lines && time >= j.linesTime) { j.lines = lines; j.linesTime = time; }
+    j.time = Math.max(j.time, time);
+    if (waitingSince && time >= waitingSince - 2000 && st === "running") j.replied = true;
+    return true;
+  }
+
+  // ---------- rendering ----------
+  function ago(ms) {
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 60) return s + " s ago";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + " min ago";
+    var h = Math.floor(m / 60);
+    return h + " h " + (m % 60) + " min ago";
+  }
+  function runtimeText(j) {
+    if (j.minutes === null) return "";
+    var m = j.minutes;
+    if (j.status === "running" && j.minutesTime) m += Math.round((Date.now() - j.minutesTime) / 60000);
+    return m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min";
+  }
+  var LABEL = { running: "Running", done: "Finished", failed: "Failed", stopped: "Stopped" };
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function render() {
+    var list = Object.keys(jobs).map(function (k) { return jobs[k]; });
+    list.sort(function (a, b) {
+      var ra = a.status === "running" ? 0 : 1, rb = b.status === "running" ? 0 : 1;
+      return ra - rb || b.time - a.time;
+    });
+    var box = $("jobs");
+    box.textContent = "";
+    var running = list.filter(function (j) { return j.status === "running"; }).length;
+    $("countText").textContent = list.length ? (running + " running, " + (list.length - running) + " finished") : "";
+    $("refreshBtn").hidden = false;
+
+    if (!list.length) {
+      var e = el("div", "empty");
+      e.appendChild(el("p", null, "No jobs in the last 12 hours."));
+      e.appendChild(el("p", "hint", "Submit a notebook with \u201cRun on Euler\u201d. It appears here as soon as it starts; jobs waiting in the queue don't report yet."));
+      box.appendChild(e);
+      return;
+    }
+    list.forEach(function (j) {
+      var card = el("article", "job");
+      var head = el("div", "job-head");
+      head.appendChild(el("span", "job-name", j.name));
+      if (j.status) head.appendChild(el("span", "pill " + j.status, LABEL[j.status]));
+      card.appendChild(head);
+
+      var meta = el("div", "job-meta");
+      var hl = el("span", "headline", j.headline || "");
+      meta.appendChild(hl);
+      var bits = [];
+      var rt = runtimeText(j);
+      if (rt && j.status === "running") bits.push("about " + rt + " so far");
+      bits.push("last message " + ago(j.time));
+      meta.appendChild(document.createTextNode((j.headline ? " \u00b7 " : "") + bits.join(" \u00b7 ")));
+      card.appendChild(meta);
+
+      if (j.lines) {
+        var pre = el("pre", "log", j.lines);
+        pre.setAttribute("aria-label", "Last log lines of " + j.name);
+        card.appendChild(pre);
+      }
+      var foot = el("div", "job-foot");
+      if (j.status === "running" && waitingSince && !j.replied) {
+        foot.appendChild(el("span", "waiting", "Waiting for fresh lines"));
+      } else if (j.lines) {
+        foot.appendChild(el("span", "hint", "Lines from " + ago(j.linesTime)));
+      }
+      if (j.logUrl && (!j.logExpires || j.logExpires > Date.now())) {
+        var a = el("a", null, "Open full log");
+        a.href = j.logUrl; a.target = "_blank"; a.rel = "noopener";
+        foot.appendChild(a);
+      }
+      if (foot.childNodes.length) card.appendChild(foot);
+      box.appendChild(card);
+    });
+  }
+
+  function setStatus(text, isErr) {
+    var s = $("statusLine");
+    s.textContent = text || "";
+    s.className = "status-line" + (isErr ? " err" : "");
+  }
+  function setConn(state) {
+    var c = $("conn");
+    c.className = "conn " + (state === "live" ? "live" : state === "down" ? "down" : "");
+    $("connText").textContent = state === "live" ? "live" : state === "down" ? "reconnecting" : "connecting";
+  }
+
+  // ---------- network ----------
+  function loadHistory() {
+    return fetch(NTFY + encodeURIComponent(topic) + "/json?poll=1&since=12h", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(function (txt) {
+        txt.split("\n").forEach(function (line) {
+          if (!line.trim()) return;
+          try { ingest(JSON.parse(line)); } catch (e) {}
+        });
+        render();
+      });
+  }
+
+  function connectLive() {
+    if (es) es.close();
+    setConn("connecting");
+    es = new EventSource(NTFY + encodeURIComponent(topic) + "/sse");
+    es.onopen = function () { setConn("live"); };
+    es.onerror = function () { setConn("down"); };
+    es.onmessage = function (ev) {
+      try {
+        if (ingest(JSON.parse(ev.data))) {
+          render();
+          checkReplies();
+        }
+      } catch (e) {}
+    };
+  }
+
+  function checkReplies() {
+    if (!waitingSince) return;
+    var pending = Object.keys(jobs).filter(function (k) { return jobs[k].status === "running" && !jobs[k].replied; });
+    if (!pending.length) {
+      waitingSince = 0;
+      clearTimeout(waitTimer);
+      setStatus("Up to date.");
+      $("refreshBtn").disabled = false;
+      render();
+    }
+  }
+
+  function requestLines() {
+    var n = $("lines").value;
+    Object.keys(jobs).forEach(function (k) { jobs[k].replied = false; });
+    var running = Object.keys(jobs).filter(function (k) { return jobs[k].status === "running"; }).length;
+    $("refreshBtn").disabled = true;
+    waitingSince = Date.now();
+    setStatus(running ? "Asked running jobs for the last " + n + " lines. They answer within about 20 s." : "Asked for fresh lines. No job is known to be running right now.");
+    render();
+    fetch(NTFY + encodeURIComponent(topic) + "-ask", { method: "POST", body: "log " + n })
+      .catch(function () { setStatus("Couldn't reach ntfy.sh. Check your internet connection and tap Refresh again.", true); });
+    clearTimeout(waitTimer);
+    waitTimer = setTimeout(function () {
+      if (!waitingSince) return;
+      waitingSince = 0;
+      $("refreshBtn").disabled = false;
+      var stillRunning = Object.keys(jobs).some(function (k) { return jobs[k].status === "running" && !jobs[k].replied; });
+      setStatus(stillRunning ? "No reply from some jobs. They may have ended without a final message, or were submitted with the old job script." : (running ? "Up to date." : ""));
+      render();
+    }, running ? REPLY_TIMEOUT_MS : 4000);
+  }
+
+  // ---------- start ----------
+  function showSetup(prefill) {
+    $("app").hidden = true; $("footer").hidden = true; $("refreshBtn").hidden = true;
+    $("setup").hidden = false;
+    $("topicInput").value = prefill || "";
+    setConn("off");
+    $("connText").textContent = "not set up";
+  }
+
+  function start() {
+    $("setup").hidden = true; $("app").hidden = false; $("footer").hidden = false;
+    $("topicText").textContent = topic;
+    setStatus("Loading messages\u2026");
+    connectLive();
+    loadHistory().then(function () {
+      setStatus("");
+      var anyRunning = Object.keys(jobs).some(function (k) { return jobs[k].status === "running"; });
+      if (anyRunning) requestLines();
+    }).catch(function () {
+      setStatus("Couldn't load messages from ntfy.sh. Check your connection, then pull to reload.", true);
+      render();
+    });
+  }
+
+  $("setupForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var t = $("topicInput").value.trim();
+    if (!validTopic(t)) {
+      $("setupErr").hidden = false;
+      $("setupErr").textContent = "Use only letters, digits, - and _ (as printed by the setup).";
+      return;
+    }
+    $("setupErr").hidden = true;
+    topic = t; store("euler-topic", t);
+    start();
+  });
+  $("refreshBtn").addEventListener("click", requestLines);
+  $("changeTopic").addEventListener("click", function () { store("euler-topic", null); if (es) es.close(); showSetup(topic); });
+  try { var savedLines = load("euler-lines"); if (savedLines) $("lines").value = savedLines; } catch (e) {}
+  $("lines").addEventListener("change", function () { store("euler-lines", $("lines").value); });
+
+  // refresh relative times; re-ask when the page comes back to the foreground
+  setInterval(function () { if (topic && !$("app").hidden) render(); }, 15000);
+  var hiddenAt = 0;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (topic && !$("app").hidden && hiddenAt && Date.now() - hiddenAt > 30000) {
+      connectLive();
+      loadHistory().then(function () {
+        if (Object.keys(jobs).some(function (k) { return jobs[k].status === "running"; })) requestLines();
+      }).catch(function () {});
+    }
+  });
+
+  var fromHash = decodeURIComponent((location.hash || "").slice(1));
+  if (validTopic(fromHash)) { store("euler-topic", fromHash); topic = fromHash; }
+  else { var saved = load("euler-topic"); if (validTopic(saved)) topic = saved; }
+  if (topic) start(); else showSetup("");
+})();
+</script>
+</body>
+</html>
